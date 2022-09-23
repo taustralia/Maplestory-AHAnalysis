@@ -20,21 +20,21 @@ cv2.waitKey(0)
 
 #Resize cropped image
 resized = cv2.resize(crop, (2559, 1834))
-cv2.imwrite("Resized-Test.jpg", resized)
+cv2.imwrite("Resized-Test-edit.jpg", resized)
 
 #Show resized image
 #cv2.imshow("Resized image", resized)
 #cv2.waitKey(0)
 
 #Convert resized, cropped data into text output -- converts to b&w, adds threshold
-img = Image.open("Resized-Test.jpg")
+img = Image.open("Resized-Test-edit.jpg")
 text = pytesseract.image_to_string(img)
-resized = cv2.imread('Resized-Test.jpg', 0)
+resized = cv2.imread('Resized-Test-edit.jpg', 0)
 thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
 #Shows b&w resized img
-cv2.imshow('Thresh', thresh)
-cv2.waitKey()
+#cv2.imshow('Thresh', thresh)
+#cv2.waitKey(0)
 
 #Variable Indexing
 price = text.find("Price")
@@ -47,16 +47,27 @@ itemPrice = text[int(price):int(unit_price)].replace(",", "")
 unitPrice = text[int(unit_price):int(time)].replace(",", "")
 date = text[int(time):]
 
-#Delete values in parantheses for Price & Unit Price
+#Delete values in parantheses for Price & Unit Price & delete unwanted words
 import re
-itemPrice = re.sub("\(.*?\)", "", itemPrice)
-itemPrice = re.sub("\.*?\)", "", itemPrice)
+itemPrice = re.sub("\(.*?\)|\.*?\)|\(.*?", "", itemPrice)
+unitPrice = re.sub("\(.*?\)|\.*?\)|\(.*?", "", unitPrice)
+itemName = itemName.replace("Item Name", "")
+date = date.replace("Time", "").replace("Completed", "")
+itemPrice = itemPrice.replace("Price", "").replace("\n\n", "\n")
+unitPrice = unitPrice.replace("Unit Price", "").replace("\n\n", "\n")
 
-x = itemPrice.split()
-print(" ".join(sorted(set(x), key=x.index)))
+#Combine data into table & csv export
+from tabulate import tabulate
+columns = ["Item", "Price", "Unit Price", "Time"]
+mergedData = [[itemName, itemPrice, unitPrice, date]]
+#print(tabulate(mergedData, headers=columns))
 
-unitPrice = re.sub("\(.*?\)", "", unitPrice)
-unitPrice = re.sub("\.*?\)", "", unitPrice)
+with open('rawdata.csv', 'w') as out:
+    out.write(tabulate(mergedData, headers=columns))
 
-y = unitPrice.split()
-print(" ".join(sorted(set(y), key=y.index)))
+#Add hyphens 
+def addHyphens(mergedData):
+    if itemPrice/unitPrice != int:
+        print('hyphen')
+
+addHyphens(Dea)
