@@ -5,11 +5,16 @@ TL;DR: A MapleStory Auction House companion to scrap historical sales data and s
 ## **Table of Contents**
 
 [Background](#background)
+
 [Purpose and Methodology](#purpose-and-methodology)
+
 1. [Data Extraction](#data-extraction)
 2. [Database Setup](#database-setup)
+
 [How to Use](#how-to-use)
+
 [Future Considerations](#future-considerations)
+
 [Sample Results](#sample-results)
 
 ### **Background**
