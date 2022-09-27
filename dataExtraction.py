@@ -1,5 +1,5 @@
 #Loading required libraries
-from copy import copy
+from contextlib import closing
 import cv2
 import pytesseract
 from PIL import Image
@@ -8,91 +8,108 @@ import shutil
 import time
 import numpy as np
 import pandas as pd
+from textblob import TextBlob
 
 pytesseract.pytesseract.tesseract_cmd = 'C:/Users/cooli/AppData/Local/Tesseract-OCR/tesseract.exe'
-
+xconfig = ' --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.,()%'
+yconfig = ' --oem 3 preserve_interword_spaces=1 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.,()%'
 rawDir = (r'C:\Users\cooli\Desktop\Screenshots\Raw')
 cropDir = (r'C:\Users\cooli\Desktop\Screenshots\Cropped')
 processDir = (r'C:\Users\cooli\Desktop\Screenshots\Processed')
 resizeDir = (r'C:\Users\cooli\Desktop\Screenshots\Resized')
-excelDir = (r'C:\Users\cooli\Desktop\Screenshots')
+csvDir = (r'C:\Users\cooli\Desktop\Screenshots\CSV')
 
-os.chdir(rawDir)
-for filename in os.listdir(rawDir):
-    if len(str(filename)) == int(23):
-    #Store raw data image into memory
-        img = cv2.imread(filename) 
-        #Crop fullscreen shot into required section
-        crop = img[147:671,272:1004]
-        cv2.imwrite(filename + "Cropped.jpg", crop)
+def imageOCR():
+    os.chdir(rawDir)
+    for filename in os.listdir(rawDir):
+            img = cv2.imread(filename) 
+            #Crop fullscreen shot into required section
+            crop = img[147:671,272:1004]
+            cv2.imwrite(filename + "Cropped.jpg", crop)
+            time.sleep(1)
+            os.remove(filename)
+            croppedFiles = [filename for filename in os.listdir(rawDir) if filename.endswith('Cropped.jpg')]
+            for filename in croppedFiles:
+                shutil.move(os.path.join(rawDir, filename), cropDir) 
+#Resizes image & performs morphological transformations to allow for accurate text output
+    os.chdir(cropDir)
+    for filename in os.listdir(cropDir):
+        img = cv2.imread(filename)
+        crop = np.array(Image.open(filename))
+        resized = cv2.resize(crop, (1600, 1146), interpolation=cv2.INTER_CUBIC)
+        cv2.imwrite(filename + "Resized.jpg", resized)
         time.sleep(1)
         os.remove(filename)
-        
-for filename in os.listdir(rawDir):
-    time.sleep(1)
-    shutil.move(os.path.join(rawDir, filename), cropDir) 
+        resizedFiles = [filename for filename in os.listdir(cropDir) if filename.endswith('Resized.jpg')]
+        for filename in resizedFiles:
+            shutil.move(os.path.join(cropDir, filename), resizeDir)
 
-os.chdir(cropDir)
-for filename in os.listdir(cropDir):
-    img = cv2.imread(filename)
-    crop = np.array(Image.open(filename))
-    resized = cv2.resize(crop, (2559, 1834))
-    cv2.imwrite(filename + "Resized.jpg", resized)
-    time.sleep(1)
-    os.remove(filename)
+    os.chdir(resizeDir)
+    for filename in os.listdir(resizeDir):
+        img = cv2.imread(filename)
+        resized = cv2.imread(filename, 0)
+        blur = cv2.GaussianBlur(resized, (3,3), 0)
+        erosion = cv2.erode(blur, kernel = np.ones((2,1), 'uint8'))
+        dilation = cv2.dilate(erosion, kernel = np.ones((2,1), 'uint8'), iterations=2)
+        blurv2 = cv2.GaussianBlur(dilation, (3,3), 0)
+        opening = cv2.morphologyEx(blurv2, cv2.MORPH_OPEN, kernel = np.ones((2,1), 'uint8'))
+        thresh = cv2.threshold(opening, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+        cv2.imwrite(filename + "Processed.jpg", thresh)
+        time.sleep(3)
+        os.remove(filename)
+        processedFiles = [filename for filename in os.listdir(resizeDir) if filename.endswith('Processed.jpg')]
+        for filename in processedFiles:
+            shutil.move(os.path.join(resizeDir, filename), processDir)
+#Extracts required information into distinct variables to set up dataframe    
+def dataCleanup():
+    os.chdir(processDir)
+    for filename in os.listdir(processDir):
+        if filename.endswith('.jpg'):
+            img = Image.open(filename)
+            text = pytesseract.image_to_string(img, config=xconfig)
+            itemName = text[text.find("Name"):(text.find("Price"))]
+            itemPrice = text[(text.find("Price")):(text.find("UnitPrice"))].replace(",", "")
+            unitPrice = text[(text.find("UnitPrice")):(text.find("2022"))].replace(",", "")
+            date = text[(text.find("2022")):]
+            
+            #Remove unwanted symbols, words & prep columns for export
+            import re
+            itemPrice = re.sub("\(.*?\)|\.*?\)|.*?\)|^, |, \Z|[^0-9\n\.]|Price|\n\n", "", itemPrice)
+            unitPrice = re.sub("\(.*?\)|\.*?\)|.*?\)|[^0-9\n\.]|UnitPrice|\n\n|,\Z", "", unitPrice)
+            itemName = itemName.replace("\n\n", "", 1).replace("\n\n", "\n").replace("Name", "")
+            date = date.replace("\n\n", "\n")
+            #print([unitPrice.splitlines()])
+            data = {'Item': (itemName.splitlines()), 'Price': (itemPrice.splitlines()), 'Date': (date.splitlines())}
+            df = pd.DataFrame(data)
+            df.to_csv('mergedData' + filename + '.csv')
 
-for filename in os.listdir(cropDir):
-    time.sleep(1)
-    shutil.move(os.path.join(cropDir, filename), resizeDir)
-
-os.chdir(resizeDir)
-for filename in os.listdir(resizeDir):
-    img = cv2.imread(filename)
-    img = Image.open(filename)
-    text = pytesseract.image_to_string(img)
-    resized = cv2.imread(filename, 0)
-    thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-    cv2.imwrite(filename + "Processed.jpg", thresh)
-    time.sleep(3)
-    os.remove(filename)
-
-for filename in os.listdir(resizeDir):
-    time.sleep(1)
-    shutil.move(os.path.join(resizeDir, filename), processDir)
-os.chdir(processDir)
-
-for filename in os.listdir(processDir):
-    price = text.find("Price")
-    unit_price = text.find("Unit Price")
-    date = text.find("Time")
-    itemName = text[:int(price)]
-    itemPrice = text[int(price):int(unit_price)].replace(",", "")
-    unitPrice = text[int(unit_price):int(date)].replace(",", "")
-    date = text[int(date):]
-
-    #Delete values in parantheses for Price & Unit Price & delete unwanted words
-    import re
-    itemPrice = re.sub("\(.*?\)|\.*?\)|\(.*?", "", itemPrice)
-    unitPrice = re.sub("\(.*?\)|\.*?\)|\(.*?", "", unitPrice)
-    itemName = itemName.replace("Item Name", "")
-    date = date.replace("Time", "").replace("Completed", "")
-    itemPrice = itemPrice.replace("Price", "").replace("\n\n", "\n")
-    unitPrice = unitPrice.replace("Unit Price", "").replace("\n\n", "\n")
-
-#Combine data into table & csv export
-   # from tabulate import tabulate
-
-    #columns = ["Item", "Price", "Unit Price", "Time"]
-    #mergedData = [[itemName, itemPrice, unitPrice, date]]
-#print(tabulate(mergedData, headers=columns))
-
+            #Separating Unit Price into it's own CSV due to the fact that pytesseract can't detect single hyphens
+            unitpriceData = {'Unit Price': (unitPrice.splitlines())}
+            df2 = pd.DataFrame(unitpriceData)    
+            df2.to_csv('unitPrice' + filename + '.csv')
+            os.remove(filename)
+            finalCSV = [filename for filename in os.listdir(processDir) if filename.endswith('.csv')]
+            for filename in finalCSV:
+                shutil.move(os.path.join(processDir, filename), csvDir)
+def renameCSV():
+    os.chdir(csvDir)
+    folder = r"C:\Users\cooli\Desktop\Screenshots\CSV"
+    for filename in os.listdir(csvDir):
+        beginning = filename[filename.find(".jpgCropped"):filename.find(".csv")]
+        if str(beginning) in filename:
+            oldName = filename
+            newName = filename.replace(str(beginning),"")
+            os.rename (oldName, newName)
+        #oldFilename = r'C:\Users\cooli\Desktop\Screenshots\CSV\\' + filename
+        #print(oldFilename)
+        #newFilename = folder + filename.split('.jpgCropped', 1)[0] + ".csv"
+        #print(newFilename)
+        #os.renames(filename, newFilename)
+            
+#imageOCR()
+#dataCleanup()
+renameCSV()
 #os.chdir(ssDir)
 #for filename in os.listdir(processDir):
   #  with open(filename + '.csv', 'w') as out:
      #   out.write(tabulate(mergedData, headers=columns))
-
-    item = list(itemName)
-    
-    columns = ["Item", "Price", "Unit Price", "Time"]
-    df = pd.DataFrame(item, [itemPrice], [unitPrice],) columns = columns)
-    df.to_excel(filename + '.xlsx')
